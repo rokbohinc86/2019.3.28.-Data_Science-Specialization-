@@ -1,0 +1,275 @@
+---
+title: "Impact of weather events on the population health and property/crop damage"
+author: "Rok Bohinc"
+date: "June 15, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+In this study I adress the following questions:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+In order to address this questions I first subset the data to look at only the relevant variables and filter the data for the recent present events. Then I make the data set tidy and group the event types for easier data analysis. I then investigate which weather events cause the most injuries and fatalities/crop and property damage. I further investigate injuries and fatalities of tornadoes by looking at the dependence on the intensity scale. I also look where and when the most damaging weather events occour and find possible explanations for the observations.
+
+## Data Procesing
+
+First of all I load the data for the project.
+
+
+```{r loadingdata, echo= TRUE, message=FALSE, warning=FALSE, results='hide', cache=TRUE}
+setwd("/home/rok/Edjucation/2019.3.28. Data_Science-Specialization/Reproducible research/Final Assighnment")
+if (!file.exists("data")){dir.create("data")}
+fileURL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+
+# download data
+
+download.file(fileURL, destfile = "./data/Storm.csv", method = "curl")
+
+# record the date the data has been downloaded
+
+dateDownloaded <- date()
+data <- read.csv("./data/Storm.csv")
+```
+
+The data has `r dim(data)[1]` observations and `r dim(data)[2]` variables, which is a lot. On top of this the data is quite messy, so I will try to reduce the number of rows and columns of the data set.  
+
+### Subsetting data
+
+In order to answer both of the questions not all of the `r dim(data)[2]` variables are needed. It therefore makes sense to subset the data by choosing only the relevant variables including the state where and when the event has occurred, the type of event, the Fujita tornado intensity scale, the magnitude of the event, the associated fatalities, injuries, property damage and crop damage. 
+
+```{r, echo= TRUE, message=FALSE, warning=FALSE, results='hide'}
+library(dplyr)
+data <- select(data, STATE__, BGN_DATE, EVTYPE, F, MAG, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+```
+
+
+Both of the questions are associated with the **current** impact of storm and weather events on the population. So my aim is to filter the data for the "recent" present. First I convert the data column to the date format.
+
+```{r, echo= TRUE, message=FALSE, warning=FALSE, results='hide'}
+library(lubridate)
+data[,2] <- mdy_hms(data[,2])
+period <- 10
+```
+
+I see that the data describe events from `r first(sort(data[,2]))` to `r last(sort(data[,2]))`. I make the assumption that events that happened in the last `r period` years since  `r last(sort(data[,2]))` represent the "recent"" present.
+
+```{r}
+data <- filter(data, BGN_DATE >= last(data$BGN_DATE) - years(period))
+```
+The reduced data set has `r dim(data)[1]` observations and `r dim(data)[2]` variables.
+
+Furthermore, to answer both of the question I can restrict myself to only look at fatalities, injuries, crop damage and property damage different from 0.
+
+```{r}
+data <- subset(data, (FATALITIES != 0 | INJURIES != 0) | (PROPDMG != 0 | CROPDMG !=0))
+```
+
+With this I have reduced the number if observations to `r dim(data)[1]`.
+
+### Cleaning data
+
+First of all I will convert property damage and crop damage both to a single column. In the original data this information is composed of the XXXDMG number and the XXXDMGEXP, where XXX corresponds either to CROP or PROP. The exponent contains the following values:
+
+```{r}
+table(as.factor(as.character(data$PROPDMGEXP)))
+table(as.factor(as.character(data$CROPDMGEXP)))
+```
+where K stands for thousand, M for million, and B for billion. I now first create two new column for the exponents where I make the transformation and then afterwards I create another two columns multiplying XXXDMG with the appropriate factor. 
+
+```{r, cache=TRUE}
+data <- mutate(data, propdamageexp = 0, cropdamageexp = 0)
+
+data$propdamageexp[data$PROPDMGEXP=="K"] <- 1000
+data$propdamageexp[data$PROPDMGEXP=="M"] <- 1000000
+data$propdamageexp[data$PROPDMGEXP=="B"] <- 1000000000
+
+data$cropdamageexp[data$CROPDMGEXP=="K"] <- 1000
+data$cropdamageexp[data$CROPDMGEXP=="M"] <- 1000000
+data$cropdamageexp[data$CROPDMGEXP=="B"] <- 1000000000
+
+data <- mutate(data, propdamage = PROPDMG*propdamageexp, cropdamage = CROPDMG*cropdamageexp)
+data <- select(data, STATE__, BGN_DATE, EVTYPE, F, MAG, FATALITIES, INJURIES, propdamage, cropdamage)
+```
+
+
+### Making the data set tidy
+
+Now I want to create a tidy data set. In particular I want to gather together information about injuries and fatalities, and the information about the property damage and crop damage.
+
+```{r, cache=TRUE}
+library(tidyr)
+cleandata <- gather(data, damagetype, value, c(propdamage, cropdamage)) %>% gather(injurytype, count, c(FATALITIES, INJURIES))
+names(cleandata) <- c("statefips", "date", "eventtype", "tornadointscale", "magnitude", "damagetype", "value", "injurytype", "count")
+cleandata <- droplevels(cleandata) # Drop unused factors
+```
+
+### Grouping of event types
+
+The last part in the data processing is grouping the event types. As you can see below there are several event types that can be grouped together, as for instance STRONG WIND and STRONG WINDS. 
+
+```{r}
+head(sort(unique(cleandata$eventtype)))
+```
+
+Below is the conversion/simplification of event types. This is a rather unrigorous conversion and certain classifications can certainty be classified otherwise. 
+
+Could have used also amatch from stringdist
+```{r}
+#library(stringdist)
+#EVTYPE_amatch <- amatch(toupper(storm_data_relevantEVTYPE$EVTYPE), toupper(EVTYPE_NOAAlist), maxDist = 1)
+```
+
+```{r, cache=FALSE}
+cleandata$eventtype <- as.character(cleandata$eventtype)
+cleandata$eventtype[grep("STORM|HURRICANE|BLIZZARD|FUNNEL CLOUD",cleandata$eventtype)] <- "STORM"
+cleandata$eventtype[grep("WIND|DUST DEVIL|DRY MICROBURST|TROPICAL DEPRESSION",cleandata$eventtype)] <- "WIND"
+cleandata$eventtype[grep("FLOOD|FLD",cleandata$eventtype)] <- "FLOOD"
+cleandata$eventtype[grep("FIRE|DENSE SMOKE",cleandata$eventtype)] <- "FIRE"
+cleandata$eventtype[grep("SNOW",cleandata$eventtype)] <- "SNOW"
+cleandata$eventtype[grep("SURF",cleandata$eventtype)] <- "SURF"
+cleandata$eventtype[grep("RAIN|PRECIPITATION",cleandata$eventtype)] <- "RAIN"
+cleandata$eventtype[grep("TIDE",cleandata$eventtype)] <- "TIDE"
+cleandata$eventtype[grep("COLD",cleandata$eventtype)] <- "COLD"
+cleandata$eventtype[grep("HEAT",cleandata$eventtype)] <- "HEAT"
+cleandata$eventtype[grep("CURRENT",cleandata$eventtype)] <- "CURRENT"
+cleandata$eventtype[grep("WINTER",cleandata$eventtype)] <- "WINTER"
+cleandata$eventtype[grep("FOG",cleandata$eventtype)] <- "FOG"
+cleandata$eventtype[grep("FROST|ICE ON ROAD",cleandata$eventtype)] <- "FROST"
+cleandata$eventtype[grep("HAIL",cleandata$eventtype)] <- "HAIL"
+cleandata$eventtype[grep("TORNADO|WATERSPOUT",cleandata$eventtype)] <- "TORNADO"
+cleandata$eventtype[grep("SEA",cleandata$eventtype)] <- "SEA"
+
+# Making factor variables
+cleandata$eventtype <- as.factor(cleandata$eventtype)
+cleandata$tornadointscale <- as.factor(cleandata$tornadointscale)
+cleandata$injurytype <- as.factor(cleandata$injurytype)
+
+```
+
+I have reduced the eventtype variable to `r length(unique(cleandata$eventtype))` different entries. In the end I show the head of the processed data set I named cleandata.
+
+```{r}
+head(cleandata)
+```
+
+## Results
+
+### General overview 
+
+Below is the code for investigating the dependence of fatalities, injuries, crop damage and property damage on the event type.
+
+```{r, fig.width = 10, fig.height=15, fig.cap="Figure: This plot shows the number of fatalaties and injuries, as well as crop damage and property damage across different event types.", cache=TRUE}
+summeddataFI <- group_by(cleandata, eventtype, injurytype) %>% summarise(sum(count)) %>% arrange(desc(`sum(count)`))
+summeddataDMG <- group_by(cleandata, eventtype, damagetype) %>% summarise(sum(value)) %>% arrange(desc(`sum(value)`))
+
+par(mfrow=c(4,1))
+barplot(subset(summeddataFI, injurytype=="FATALITIES")$`sum(count)`, names.arg = subset(summeddataFI, injurytype=="FATALITIES")$eventtype, las=2, main = "FATALITIES")
+barplot(subset(summeddataFI, injurytype=="INJURIES")$`sum(count)`, names.arg = subset(summeddataFI, injurytype=="INJURIES")$eventtype, las=2, main = "INJURIES")
+barplot(subset(summeddataDMG, damagetype=="cropdamage")$`sum(value)`, names.arg = subset(summeddataDMG, damagetype=="cropdamage")$eventtype, las=2, main = "Crop damage in USD")
+barplot(subset(summeddataDMG, damagetype=="propdamage")$`sum(value)`, names.arg = subset(summeddataDMG, damagetype=="propdamage")$eventtype, las=2, main = "Property damage in USD")
+
+```
+
+Making tables
+```{r}
+#tab1 <- storm_data %>% 
+#      mutate_at(vars(ends_with("amount")), function(x) {x/1000000})
+
+#library(knitr)
+#library(kableExtra)
+#tab1 %>%
+#      kable(caption = "Tab. 1 - Relevant severe weather events",
+#            col.names = c("Event", "N", "Fatalities", "Injuries", "Property damage", "Crops damage", "Total damage"),
+#            digits = 1) %>%
+#      kable_styling(bootstrap_options = "striped",
+#                    full_width = F) %>% 
+#     footnote(general = "Source: NOAA - Damage values in millions of USD",
+#               general_title = "")
+```
+
+
+The most injuries and fatalities have been caused by tornadoes. The second most injuries and fatalities have been caused by events related to heat. Not surprisingly the most crop damage has been caused by drought, flood, and storms. In `r period` years since  `r last(sort(data[,2]))` drought, flood, and storms have caused about `r round(subset(summeddataDMG, damagetype=="cropdamage"& eventtype=="DROUGHT")[[1,3]]/10^9,1)`, `r round(subset(summeddataDMG, damagetype=="cropdamage"& eventtype=="FLOOD")[[1,3]]/10^9,1)`, and `r round(subset(summeddataDMG, damagetype=="cropdamage"& eventtype=="STORM")[[1,3]]/10^9,1)` billion USD of crop damage, respectively. On the other hand drought does not damage the property as severely and most damage to properties is done though flood and storms. In `r period` years since  `r last(sort(data[,2]))` flood and storms have caused about `r round(subset(summeddataDMG, damagetype=="propdamage"& eventtype=="FLOOD")[[1,3]]/10^9,1)`, and `r round(subset(summeddataDMG, damagetype=="propdamage"& eventtype=="STORM")[[1,3]]/10^9,1)` billion USD of property damage.
+
+### Injuries and fatalaties caused by tornados  
+
+Below I show a histogram plot of tornado fatalities and injuries sorted according to the Fujita tornado intensity scale.
+
+```{r message=FALSE, warning=FALSE, fig.width = 12, fig.cap="Figure: Histogram of tornado fatalities and injuries sorted according to the Fujita tornado intensity scale."}
+library(ggplot2)
+library(gridExtra)
+
+tornadodata <-filter(subset(cleandata, eventtype=="TORNADO"),!is.na(tornadointscale),count!=0)
+
+p1  <- qplot(count, data = filter(tornadodata, injurytype=="FATALITIES"), fill = tornadointscale, bins=50, xlim = c(0,50)) + ggtitle("Histogram of tornado fatalaties")
+
+p2  <- qplot(count, data = filter(tornadodata, injurytype=="INJURIES"), fill = tornadointscale, bins=100, xlim = c(0,101)) + ggtitle("Histogram of tornado injuries")
+
+grid.arrange(p1, p2, nrow = 1)
+```
+
+We can see that as the tornado intensity scale number (0-5) increases so does the number of fatalities/injuries. Above I have restricted the plot to a specific range leaving out outlines. However the maximum amount of injuries/fatalities in an tornado event are `r max(filter(tornadodata, injurytype=="INJURIES")$count)` and `r max(filter(tornadodata, injurytype=="FATALITIES")$count)`, respectively, both occurring in a tornado level 5 in the intensity scale.
+```{r}
+group_by(tornadodata,tornadointscale, injurytype) %>% summarise(sum(count)) %>% arrange(injurytype, desc(`sum(count)`))
+sort(table(tornadodata$tornadointscale), decreasing = TRUE)
+```
+
+We can see that most fatalities (746) and injuries (9618) have occurred in tornadoes of level 3. This is partially related to the fact that such tornadoes are the second most frequent (784 events). Interestingly there were 572 fatalities in level 5 tornadoes (second most) although the were only 34 such tornadoes recorded in the 10 years time period.
+
+### Tornado fatalities and injuries by states
+
+```{r message=FALSE, warning=FALSE}
+library(tidyr)
+tornadostate <- group_by(tornadodata, statefips, injurytype) %>% summarise(sum(count)) %>% arrange(injurytype, desc(`sum(count)`))
+tornadostate <- as.data.frame(unclass(tornadostate))
+spread(tornadostate, injurytype, sum.count.) %>% arrange(desc(FATALITIES), desc(INJURIES)) %>% head
+```
+
+From the table above we can see that states most prone to tornado fatalities and injuries are Alabama (01), MISSOURI (29), and TENNESSEE (47), which are all neighboring states in the central/southeast part of the US.
+
+### Total damage by states
+
+Here I am going to focus on which states are mostly affected by drought, flood, and storms.
+```{r}
+stormdata <- filter(cleandata, eventtype=="STORM")
+flooddata <- filter(cleandata, eventtype=="FLOOD")
+droughtdata <- filter(cleandata,eventtype=="DROUGHT")
+
+group_by(flooddata, statefips) %>% summarise(sum(value)) %>% arrange(desc(`sum(value)`)) %>% head
+group_by(stormdata, statefips) %>% summarise(sum(value)) %>% arrange(desc(`sum(value)`)) %>% head
+group_by(droughtdata, statefips) %>% summarise(sum(value)) %>% arrange(desc(`sum(value)`)) %>% head
+```
+
+From here we can see that the flood has done by far most damage in California (06), storms have done most damage in Louisiana (22), followed by Florida (12) and Mississippi (28), while drought has caused most damage in Texas (48), which is one of the hottest states in the US.
+
+### Time analysis 
+
+Here I am going to focus on tornadoes and flood has influenced injuries/fatalities and damage during the last 10 years.
+
+```{r, message=FALSE, warning=FALSE, fig.width = 12, fig.cap="Figure: Time series plot of total fatalities/injuries (left) and property/crop damage (right) from 2001 to 2011."}
+library(ggplot2)
+library(gridExtra)
+tornadodata$date <- year(tornadodata$date)
+timetornado <- group_by(tornadodata, date, injurytype) %>% summarise(sum(count))
+
+flooddata$date <- year(flooddata$date)
+timeflood <- group_by(flooddata, date, damagetype) %>% summarise(sum(value))
+
+p1 <- qplot(data = timetornado, date, `sum(count)`,  geom=c("point", "line"), ylab = "total counts", main = "Tornado fatalities and injuries", col = injurytype)  + scale_x_discrete(name ="years", limits=unique(timetornado$date))
+
+p2 <- qplot(data = timeflood, date, `sum(value)`/1000000000, ylab = "damage (bilion USD)", main = "Crop and property damage in floods", col = damagetype, geom=c("point", "line"))+ scale_x_discrete(name ="years", limits=unique(timeflood$date))
+grid.arrange(p1, p2, nrow = 1)
+```
+
+So we can see that the number of injuries and fatalities is increasing over the years. In particularly in 2011 there was substantially more injuries and deaths compared to previous years. The observed increase could be caused by global warming. On the right side plot we see that property damage was substantially larger in 2006 compared to other years.
+
+```{r}
+group_by(filter(flooddata, date==2006, damagetype=="propdamage"), statefips) %>% summarise(sum(value)) %>% arrange(desc(`sum(value)`))
+```
+From the table above we can see that most of the damage has occurred in California (06). By looking into the [web](https://sf.curbed.com/2017/1/6/14192942/california-storm-atmospheric-river-damage) I have found that there was a flood in California 2005/2006, which likely caused the huge property damage. 
+
+

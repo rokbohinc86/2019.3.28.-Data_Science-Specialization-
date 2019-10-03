@@ -1,0 +1,71 @@
+---
+title: "My first Markdown file"
+author: "Rok Bohinc"
+date: "June 12, 2019"
+output: html_document
+---
+
+# Titles can also be specified like that
+
+## This is a section
+
+```{r}
+library(datasets)
+data("airquality")
+summary(airquality)
+```
+
+### This is a subsection
+
+This is a bit of text
+
+```{r}
+pairs(airquality)
+```
+
+Here is a regresion model
+
+```{r}
+fit <- lm(Ozone ~ Wind + Solar.R + Temp, data = airquality)
+summary(fit)
+```
+
+Let's make a unordered list:
+
+* bla
+
+* do
+
+* fin
+
+Let's make a ordered list:
+
+1. bla
+
+3. do
+
+3. fin
+
+```{r, echo=FALSE}
+time <- format(Sys.time(), "%a %b %d %X %Y")
+rand <- rnorm(1)
+```
+
+The current time is `r time`. My favurite random number is `r rand` 
+
+```{r}
+x <- rnorm(100)
+y <- x + rnorm(100, sd = 0.5) 
+```
+
+```{r, fig.height=4}
+par(mar = c(5,4,1,1))
+plot(x,y, main = "title") 
+```
+
+Here is a table of coefficients from the fit:
+```{r showtable, results='asis',tidy=TRUE}
+library(xtable)
+xt <- xtable(summary(fit))
+print(xt, type = "html")
+```

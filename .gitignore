@@ -1,0 +1,15 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+Videos/
+Slides/
+*.csv
+*.log
+*.zip
+data/
+*_cache/
+*_files/
+Practical Machine Learning/**/assets/
+Practical Machine Learning/**/fig/
+Practical Machine Learning/**/.cache/

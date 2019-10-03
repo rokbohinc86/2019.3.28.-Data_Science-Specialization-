@@ -1,0 +1,142 @@
+---
+title: "Quiz week2"
+author: "Rok Bohinc"
+date: "July 8, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+Load the Alzheimer's disease data using the commands:
+```{r message=FALSE, warning=FALSE}
+library(AppliedPredictiveModeling)
+data(AlzheimerDisease)
+```
+Which of the following commands will create non-overlapping training and test sets with about 50% of the observations assigned to each?
+
+```{r message=FALSE, warning=FALSE}
+library(caret)
+adData = data.frame(diagnosis,predictors)
+testIndex = createDataPartition(diagnosis, p = 0.50,list=FALSE)
+training = adData[-testIndex,]
+testing = adData[testIndex,]
+dim(training)
+dim(testing)
+```
+
+## Question 2
+Load the cement data using the commands:
+```{r}
+library(AppliedPredictiveModeling)
+data(concrete)
+library(caret)
+set.seed(1000)
+inTrain = createDataPartition(mixtures$CompressiveStrength, p = 3/4)[[1]]
+training = mixtures[ inTrain,]
+testing = mixtures[-inTrain,]
+summary(training)
+```
+Make a plot of the outcome (CompressiveStrength) versus the index of the samples. Color by each of the variables in the data set (you may find the cut2() function in the Hmisc package useful for turning continuous covariates into factors). What do you notice in these plots?
+
+```{r message=FALSE, warning=FALSE, paged.print=TRUE, cache=TRUE}
+library(Hmisc)
+library(ggplot2)
+training$WaterF <- cut2(training$Water,g=4)
+training$CementF <- cut2(training$Cement,g=4)
+training$BlastFurnaceSlagF <- cut2(training$BlastFurnaceSlag,g=4)
+training$FlyAshF <- cut2(training$FlyAsh,g=4)
+training$SuperplasticizerF <- cut2(training$Superplasticizer,g=4)
+training$CoarseAggregateF <- cut2(training$CoarseAggregate,g=4)
+training$FineAggregateF <- cut2(training$FineAggregate,g=4)
+training$AgeF <- cut2(training$Age,g=4)
+
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = WaterF, data = training, main = "water")
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = CementF, data = training, main = "Cement")
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = BlastFurnaceSlagF, data = training, main = "BlastFurnaceSlag")
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = FlyAshF, data = training, main = "FlyAsh")
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = SuperplasticizerF, data = training, main = "SuperPlasticizer")
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = CoarseAggregateF, data = training, main = "CoarseAggregate")
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = FineAggregateF, data = training, main = "FineAggregate")
+qplot(x = seq_along(CompressiveStrength), y = CompressiveStrength, colour = AgeF, data = training, main = "age")
+```
+
+There is a non-random pattern in the plot of the outcome versus index that does not appear to be perfectly explained by any predictor suggesting a variable may be missing.
+
+## Quesiton 3
+
+```{r}
+library(AppliedPredictiveModeling)
+data(concrete)
+library(caret)
+set.seed(1000)
+inTrain = createDataPartition(mixtures$CompressiveStrength, p = 3/4)[[1]]
+training = mixtures[ inTrain,]
+testing = mixtures[-inTrain,]
+```
+
+Make a histogram and confirm the SuperPlasticizer variable is skewed. Normally you might use the log transform to try to make the data more symmetric. Why would that be a poor choice for this variable?
+
+```{r, cache=TRUE}
+summary(training$Superplasticizer)
+qplot(training$Superplasticizer)
+qplot(log(training$Superplasticizer))
+```
+
+## Question 4
+
+```{r}
+library(caret)
+library(AppliedPredictiveModeling)
+set.seed(3433)
+data(AlzheimerDisease)
+adData = data.frame(diagnosis,predictors)
+inTrain = createDataPartition(adData$diagnosis, p = 3/4)[[1]]
+training = adData[ inTrain,]
+testing = adData[-inTrain,]
+```
+
+Find all the predictor variables in the training set that begin with IL. Perform principal components on these variables with the preProcess() function from the caret package. Calculate the number of principal components needed to capture 90% of the variance. How many are there?
+
+```{r}
+library(caret)
+ILvec <- training[, grep("^IL",names(training))]
+preProcess(ILvec,method="pca", thresh = 0.9)
+
+temp <- svd(scale(ILvec))
+sum((temp$d/sum(temp$d))[1:10])
+```
+
+Interestingly I ge two different results.
+
+## Question 5
+
+```{r}
+library(caret)
+library(AppliedPredictiveModeling)
+set.seed(3433)
+data(AlzheimerDisease)
+adData = data.frame(diagnosis,predictors)
+inTrain = createDataPartition(adData$diagnosis, p = 3/4)[[1]]
+training = adData[ inTrain,]
+testing = adData[-inTrain,]
+```
+Create a training data set consisting of only the predictors with variable names beginning with IL and the diagnosis. Build two predictive models, one using the predictors as they are and one using PCA with principal components explaining 80% of the variance in the predictors. Use method="glm" in the train function.
+
+What is the accuracy of each method in the test set? Which is more accurate?
+
+```{r message=FALSE, warning=FALSE}
+ILvec <- training[, grep("^IL",names(training))]
+preProc <- preProcess(ILvec,method="pca", thresh = 0.8)
+trainPC <- predict(preProc,ILvec)
+modelFitPCA <- train(x = trainPC, y = training$diagnosis, method="glm")
+
+testPC <- predict(preProc,testing)
+confusionMatrix(testing$diagnosis, predict(modelFitPCA,testPC))
+
+modelFit <- train(x = ILvec, y = training$diagnosis, method="glm")
+confusionMatrix(testing$diagnosis, predict(modelFit,testing))
+```
+

@@ -1,0 +1,79 @@
+---
+title: "Effect of autumatic vs. manual transmission on MPG"
+author: "Rok Bohinc"
+date: "June 28, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Summary
+In this work I investigate the relationship between the mpg and automatic vs. manual transmission of the "mtcars" data set in R. The instructions for the task reads: You work for Motor Trend, a magazine about the automobile industry. Looking at a data set of a collection of cars, they are interested in exploring the relationship between a set of variables and miles per gallon (MPG) (outcome). They are particularly interested in the following two questions:
+
+1. Is an automatic or manual transmission better for MPG?
+2. Quantify the MPG difference between automatic and manual transmissions!
+
+I first do an exploratory data analysis, then I perform a t-test to answer question 1, last I perform a multivariate fit to answer question 2. 
+
+## Exploratory analysis
+
+In the mtcars data we are interested in two variables "mpg" - Miles/(US) gallon and "am" - Transmission (0 = automatic, 1 = manual). First of all lets check if there seems to be any difference between mpg the two transmission modes. In Figure 1 I compare histograms for the manual and automatic transmission mode. So we can see that the mpg is higher for manual transmission `r round(mean(subset(mtcars, am==1)$mpg),1)` ± `r round(sd(subset(mtcars, am==1)$mpg),1)` than for the automatic `r round(mean(subset(mtcars, am==0)$mpg),1)`± `r round(sd(subset(mtcars, am==0)$mpg),1)`.  This would indicate that manual transmission is better for the mpg than automatic. 
+
+## Question 1
+
+We can verify if manual transmission is significantly better for the mpg than the automatic transmission by performing a t-test for unpaired data and unequal variances (we saw in the previous section that the variances are clearly different for the two modes) and an error 1 type rate of 5%:
+
+```{r eval=FALSE, echo=TRUE}
+t.test(mpg ~ am, paired = FALSE, var.equal = FALSE, data = mtcars)
+```
+The associated p-value for the test above is `r round(t.test(mpg ~ am, paired = FALSE, var.equal = FALSE, data = mtcars)[[3]]*100,1)`% which is less than set type 1 error rate and we can therefore reject the null hypothesis that the means are equal. From this we can already answer the first question: **Manual transmission is better for the mpg**.
+
+## Qestion 2
+
+In order to quantify the transmission mode effect on mpg we look at which variables can additionally affect mpg. To identify which variables to additionally include into the model I look at the absolute correlation matrix (see Figure 2). I am especially interested in correlation coefficients of "am" and "mpg"" variables with the other variables. 
+
+```{r}
+correlat <- as.data.frame(round(abs(cor(mtcars)),2))[c(1,9),]
+correlat[order(correlat$mpg, decreasing = TRUE),]
+```
+In the fit I want to adjust for variables which are **not** especially correlated to "am" and are correlated to "mpg". We see that that the "hp" variable meets this criteria the best as it has a big influence on "mpg" but is not correlated to "am". Because of the strong correlation with "mpg", I probably do want to include variables "wt", "cyl" and "disp", although they all have a relative big correlation with "am", so the adjustment for any of these variables might result in an insignificant coefficient of "am". Variables "wt", "cyl" and "disp" are all correlated (correlation between 0,78 and 0.89), so it is probably fine if I include only one of them. Variable "wt" has the biggest correlation with "mpg", and therefore I choose this variable. 
+
+[comment]: <> ("carb" has a very small correlation with "am" and is therefore worth while including in the model. "qsec"" and "vs"" are quite correlated to "hp"", therefore discarding them would be sensible as they will not improve the fit. We are left with "draft" and "gear" which we may potentially include in the model. I therefore consider variables "hp" - Gross horsepower, "wt"- Weight (1000 lbs), "carb" - Number of carburetors, "drat" - Rear axle ratio and "gear" - Number of forward gears. I am not very knowledgeable about cars and these variables, and I can therefore not make a better choice.)
+
+### Fitting
+Below I consider several models to fit "mpg" with "am" with adjustments.
+```{r}
+fit0 <- lm(data=mtcars, mpg ~ .)
+fit1 <- lm(data=mtcars, mpg ~ am)
+fit2 <- lm(data=mtcars, mpg ~ am + hp)
+fit3 <- lm(data=mtcars, mpg ~ am + hp + wt)
+anova(fit1, fit2, fit3)
+```
+From the table above I see that in addition to "am", "hp" and "wt" have a significant effect on the fit. The inclusion of the additional fitting parameter does not result in a significant improvement of the model. I however cannot show the results because of the restrictions on the length of the report. In Figure 3 I show residual and Q-Q plots for model 3 and model 0 where we adjust for all parameters. Both residual plots exhibit a mild non-ideal V-type trend, which means that there is likely another unknown variable responsible for the observed trend. The Q-Q plot for model 3 perhaps just passes the thick pencil approach.
+
+### Interpretation
+```{r}
+round(summary(fit3)$coef,3)
+```
+From the table above we see that mean mpg for automatic transmission is estimated to be `r round(summary(fit3)$coef,1)[1,1]` holding other variables constant while the increase in the mean of the mpg going from automatic to manual transmission is estimated to be `r round(summary(fit3)$coef,1)[2,1]` holding other variables constant. So even with the adjustments it seems that the manual transmission is better for mpg. The inclusion of the am parameter in the fitting model is however not significant as the p-value is `r round(summary(fit3)$coef,2)[2,4]`. The model however strongly supports the inclusion of "hp" and "wt".
+
+## Appendix
+
+```{r echo=FALSE, fig.cap="Histograms of mpg for automatic transmission (left) and manual transmission (right)", fig.height=6, fig.width=10, cache=TRUE}
+library(ggplot2)
+qplot(data = mtcars, mpg, facets = .~ am, bins = 10)
+```
+
+```{r echo=FALSE, fig.cap="Pairs plot of the selected variables and the corresponsing correlation coefficients", fig.height=10, fig.width=10, cache=TRUE}
+library(ggplot2)
+library(GGally)
+ggpairs(mtcars, lower = list(continuous = "smooth"))
+```
+
+```{r echo=FALSE, fig.cap="Residual plot (left) and Q-Q plot (rigt) for model 3 (top) and model 0 (bottom).", fig.height=10, fig.width=10, cache=TRUE}
+par(mfrow=c(2,2))
+plot(fit3, which = 1)
+plot(fit3, which = 2)
+plot(fit0, which = 1)
+plot(fit0, which = 2)
+```
